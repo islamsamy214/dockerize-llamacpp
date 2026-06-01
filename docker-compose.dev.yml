@@ -1,0 +1,51 @@
+name: llama-cpp-dev
+
+# Playground / testing. Interactive CLI — NOT a long-running service.
+# Run it with:
+#   docker compose -f docker-compose.dev.yml run --rm playground
+# Drop into a shell to poke around instead:
+#   docker compose -f docker-compose.dev.yml run --rm --entrypoint bash playground
+# Try a different model on the fly without editing files:
+#   DEV_MODEL_HF=ggml-org/gemma-4-E2B-it-GGUF:Q8_0 \
+#     docker compose -f docker-compose.dev.yml run --rm playground
+
+services:
+  playground:
+    image: ${LLAMA_IMAGE}
+    entrypoint: ["/app/llama-cli"]
+    command:
+      - "-hf"
+      - "${DEV_MODEL_HF}"
+      - "-ngl"
+      - "${NGL}"
+      - "-c"
+      - "${DEV_CTX}"
+      - "--jinja"
+      - "-cnv"
+
+    environment:
+      # SYCL can't query free VRAM on the Arc iGPU without this; it then assumes
+      # total RAM = free RAM and mis-sizes offload. (This is the warning spam.)
+      ZES_ENABLE_SYSMAN: "1"
+
+    devices:
+      - "/dev/dri:/dev/dri"
+
+    # Bind mounts to host paths — models read/write here so you can also point
+    # -m at a local file, and the HF cache is shared with the server compose so
+    # anything you pull once is reused.
+    volumes:
+      - type: bind
+        source: ${MODELS_DIR}
+        target: /models
+      - type: bind
+        source: ${HF_CACHE_DIR}
+        target: /root/.cache/huggingface
+
+    # Interactive chat needs a TTY + stdin.
+    stdin_open: true
+    tty: true
+
+    labels:
+      com.islacks.project: "llama-cpp"
+      com.islacks.role: "playground"

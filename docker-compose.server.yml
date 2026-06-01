@@ -1,0 +1,131 @@
+name: llama-cpp-server
+
+# HTTP inference server (OpenAI-compatible API + web UI on :${HOST_PORT}).
+#
+# Two services:
+#   1. model-init  — one-shot sidecar. Downloads ${SERVER_MODEL_HF_FILE} from
+#      ${SERVER_MODEL_HF_REPO} into ${MODELS_DIR}/${SERVER_MODEL_FILE} if absent,
+#      then exits 0. Idempotent — re-runs are a no-op when the file is present.
+#   2. llama-server — depends on model-init completing. Loads the local GGUF
+#      with -m, identical to the source repo's pattern.
+#
+#   mkdir -p data/models data/hf-cache
+#   docker compose -f docker-compose.server.yml up -d
+#   curl -fsS http://localhost:${HOST_PORT}/health
+# Web UI:        http://localhost:${HOST_PORT}
+# Prometheus:    http://localhost:${HOST_PORT}/metrics
+
+services:
+  # Single-responsibility "Action class" (Laravel-equivalent): fetch the model.
+  # Runs to completion before llama-server is allowed to start.
+  model-init:
+    image: ${LLAMA_IMAGE}
+    entrypoint: ["/usr/local/bin/fetch-model.sh"]
+    environment:
+      SERVER_MODEL_FILE: "${SERVER_MODEL_FILE:-gemma-4-E4B-it-Q4_K_M.gguf}"
+      SERVER_MODEL_HF_REPO: "${SERVER_MODEL_HF_REPO:-ggml-org/gemma-4-E4B-it-GGUF}"
+      # Defaults to the local filename — set explicitly only if the remote
+      # filename in the HF repo differs from what you want saved locally.
+      SERVER_MODEL_HF_FILE: "${SERVER_MODEL_HF_FILE:-${SERVER_MODEL_FILE:-gemma-4-E4B-it-Q4_K_M.gguf}}"
+      HF_TOKEN: "${HF_TOKEN:-}"      # only for gated repos
+    volumes:
+      - type: bind
+        source: ${MODELS_DIR}
+        target: /models           # writable: this is where the .gguf is dropped
+      - type: bind
+        source: ./scripts/fetch-model.sh
+        target: /usr/local/bin/fetch-model.sh
+        read_only: true
+    restart: "no"
+    labels:
+      com.islacks.project: "llama-cpp"
+      com.islacks.role: "model-init"
+
+  llama-server:
+    image: ${LLAMA_IMAGE}
+    entrypoint: ["/app/llama-server"]
+    # Source-repo pattern: load local GGUF via -m. model-init guarantees the
+    # file exists by the time we reach here.
+    command:
+      - "-m"
+      - "/models/${SERVER_MODEL_FILE:-gemma-4-E4B-it-Q4_K_M.gguf}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "-ngl"
+      - "${NGL}"
+      - "-c"
+      - "${SERVER_CTX}"
+      - "--parallel"
+      - "${PARALLEL}"
+      - "--jinja"
+      - "--metrics"          # exposes /metrics in Prometheus format
+      - "--temperature"
+      - "${TEMP}"
+      - "--top-p"
+      - "${TOP_P}"
+      - "--top-k"
+      - "${TOP_K}"
+
+    environment:
+      ZES_ENABLE_SYSMAN: "1"      # SYCL free-VRAM query on the Arc iGPU
+      LLAMA_ARG_HOST: "0.0.0.0"
+
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+
+    devices:
+      - "/dev/dri:/dev/dri"
+
+    ports:
+      - "${HOST_PORT}:8080"
+
+    # Bind mounts to host paths (not named volumes). Models are read-only — the
+    # server never writes them. HF cache stays writable and is shared with the
+    # dev compose (llama-cli -hf still uses it).
+    volumes:
+      - type: bind
+        source: ${MODELS_DIR}
+        target: /models
+        read_only: true
+      - type: bind
+        source: ${HF_CACHE_DIR}
+        target: /root/.cache/huggingface
+
+    # /health returns 200 only once the model is fully loaded. start_period is
+    # generous because GPU init takes a while on first boot. Download is no
+    # longer in this critical path — model-init owns it.
+    # NOTE: relies on the `curl` binary existing in the image. If it doesn't,
+    # swap the test for:  wget -qO- http://localhost:8080/health || exit 1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+    restart: unless-stopped
+
+    security_opt:
+      - "no-new-privileges:true"
+
+    deploy:
+      resources:
+        limits:
+          cpus: "${CPU_LIMIT}"
+          memory: ${MEM_LIMIT}
+        reservations:
+          memory: ${MEM_RESERVATION}
+
+    labels:
+      com.islacks.project: "llama-cpp"
+      com.islacks.role: "inference-server"
+
+    networks:
+      - llama
+
+networks:
+  llama:
+    driver: bridge
