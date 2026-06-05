@@ -1,0 +1,81 @@
+# Production installation with full monitoring
+# Usage: helm install llmkube charts/llmkube -f examples/values-production.yaml
+
+namespace: llmkube-system
+
+controllerManager:
+  image:
+    repository: ghcr.io/defilantech/llmkube-controller
+    # Use a specific version tag
+    tag: "0.4.0"
+    # For maximum security, use digest instead of tag (get from: crane digest <image>:<tag>)
+    # digest: "sha256:..."
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 1
+      memory: 4Gi
+    requests:
+      cpu: 100m
+      memory: 1Gi
+
+  # Multi-architecture support
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/arch
+            operator: In
+            values:
+            - amd64
+            - arm64
+
+# Enable full Prometheus integration
+prometheus:
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    namespace: ""  # Deploy in same namespace as release
+    additionalLabels:
+      prometheus: kube-prometheus-stack-prometheus
+
+  prometheusRule:
+    enabled: true
+    namespace: monitoring  # Deploy alerts to monitoring namespace
+    additionalLabels:
+      prometheus: kube-prometheus-stack-prometheus
+      role: alert-rules
+
+    rules:
+      gpu:
+        enabled: true
+        highUtilizationThreshold: 85
+        highTemperatureThreshold: 85
+        memoryPressureThreshold: 90
+        powerLimitThreshold: 250
+
+      inference:
+        enabled: true
+
+# Metrics configuration
+metrics:
+  enabled: true
+  service:
+    type: ClusterIP
+    port: 8443
+
+# RBAC
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+# Network isolation for the controller pod
+networkPolicies:
+  enabled: true

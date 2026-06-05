@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "llmkube.fullname" . }}-controller-manager
+  namespace: {{ include "llmkube.namespace" . }}
+  labels:
+    {{- include "llmkube.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.controllerManager.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "llmkube.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "llmkube.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "llmkube.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.controllerManager.podSecurityContext | nindent 8 }}
+      containers:
+      - name: manager
+        image: {{ include "llmkube.controllerImage" . }}
+        imagePullPolicy: {{ .Values.controllerManager.image.pullPolicy }}
+        command:
+        - /manager
+        args:
+        {{- if .Values.controllerManager.leaderElection.enabled }}
+        - --leader-elect
+        {{- end }}
+        - --health-probe-bind-address=:8081
+        {{- if .Values.metrics.enabled }}
+        - --metrics-bind-address=:{{ .Values.metrics.service.port }}
+        - --metrics-secure={{ .Values.metrics.secure }}
+        {{- end }}
+        {{- if .Values.modelCache.enabled }}
+        - --model-cache-path={{ .Values.modelCache.mountPath }}
+        - --model-cache-size={{ .Values.modelCache.size }}
+        {{- if .Values.modelCache.storageClass }}
+        - --model-cache-storage-class={{ .Values.modelCache.storageClass }}
+        {{- end }}
+        - --model-cache-access-mode={{ .Values.modelCache.accessMode }}
+        {{- end }}
+        - --init-container-image={{ include "llmkube.initContainerImage" . }}
+        # The default value is set in values.yaml. We do NOT use `| default 102`
+        # here because Go template's default treats 0 as missing, which would
+        # re-replace the OpenShift preset's deliberate 0 with 102 and break
+        # SCC compatibility. Schema in values.schema.json enforces integer >= 0.
+        - --default-fsgroup={{ .Values.controllerManager.initContainer.defaultFSGroup }}
+        - --router-proxy-image={{ include "llmkube.routerProxyImage" . }}
+        {{- with .Values.controllerManager.routerProxy.defaultLiteLLMURL }}
+        - --default-litellm-url={{ . }}
+        {{- end }}
+        ports:
+        - name: health
+          containerPort: 8081
+          protocol: TCP
+        {{- if .Values.metrics.enabled }}
+        - name: metrics
+          containerPort: {{ .Values.metrics.service.port }}
+          protocol: TCP
+        {{- end }}
+        {{- with .Values.controllerManager.env }}
+        env:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        securityContext:
+          {{- toYaml .Values.controllerManager.securityContext | nindent 10 }}
+        livenessProbe:
+          {{- toYaml .Values.controllerManager.livenessProbe | nindent 10 }}
+        readinessProbe:
+          {{- toYaml .Values.controllerManager.readinessProbe | nindent 10 }}
+        resources:
+          {{- toYaml .Values.controllerManager.resources | nindent 10 }}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        {{- if .Values.modelCache.enabled }}
+        - name: model-cache
+          mountPath: {{ .Values.modelCache.mountPath }}
+        {{- end }}
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      {{- if .Values.modelCache.enabled }}
+      - name: model-cache
+        persistentVolumeClaim:
+          claimName: {{ include "llmkube.fullname" . }}-model-cache
+      {{- end }}
+      {{- with .Values.controllerManager.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controllerManager.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controllerManager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 10

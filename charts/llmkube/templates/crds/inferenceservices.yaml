@@ -1,0 +1,2061 @@
+{{- if .Values.crds.install }}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+    {{- if .Values.crds.keep }}
+    helm.sh/resource-policy: keep
+    {{- end }}
+  name: inferenceservices.inference.llmkube.dev
+spec:
+  group: inference.llmkube.dev
+  names:
+    kind: InferenceService
+    listKind: InferenceServiceList
+    plural: inferenceservices
+    shortNames:
+    - isvc
+    singular: inferenceservice
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.modelRef
+      name: Model
+      type: string
+    - jsonPath: .status.readyReplicas
+      name: Replicas
+      type: string
+    - jsonPath: .status.schedulingStatus
+      name: Reason
+      priority: 1
+      type: string
+    - jsonPath: .status.queuePosition
+      name: Queue
+      priority: 1
+      type: integer
+    - jsonPath: .spec.priority
+      name: Priority
+      priority: 1
+      type: string
+    - jsonPath: .status.endpoint
+      name: Endpoint
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: InferenceService is the Schema for the inferenceservices API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of InferenceService
+            properties:
+              args:
+                description: |-
+                  Args overrides the container arguments entirely.
+                  Only used when Runtime is "generic". For llamacpp, use ExtraArgs instead.
+                items:
+                  type: string
+                type: array
+              autoscaling:
+                description: |-
+                  Autoscaling configures horizontal pod autoscaling for the inference service.
+                  When set, the controller creates and manages an HPA resource targeting the
+                  inference Deployment. Requires Prometheus Adapter for custom metrics.
+                  Mutually exclusive with manual replica management: when autoscaling is enabled,
+                  the Replicas field serves as the initial replica count only.
+                properties:
+                  maxReplicas:
+                    description: MaxReplicas is the upper limit for the number of
+                      replicas.
+                    format: int32
+                    maximum: 100
+                    minimum: 1
+                    type: integer
+                  metrics:
+                    description: |-
+                      Metrics defines the scaling metrics and target values.
+                      If empty, defaults to llamacpp:requests_processing with target average value of 2.
+                    items:
+                      description: MetricSpec defines a single metric for HPA scaling.
+                      properties:
+                        name:
+                          description: Name is the metric name (e.g., llamacpp:requests_processing).
+                          type: string
+                        targetAverageUtilization:
+                          description: TargetAverageUtilization is the target utilization
+                            percentage for Resource-type metrics.
+                          format: int32
+                          type: integer
+                        targetAverageValue:
+                          description: TargetAverageValue is the target per-pod average
+                            for Pods-type metrics.
+                          type: string
+                        type:
+                          description: Type is the metric source type.
+                          enum:
+                          - Pods
+                          - Resource
+                          type: string
+                      required:
+                      - name
+                      - type
+                      type: object
+                    type: array
+                  minReplicas:
+                    default: 1
+                    description: MinReplicas is the lower limit for the number of
+                      replicas.
+                    format: int32
+                    maximum: 10
+                    minimum: 1
+                    type: integer
+                required:
+                - maxReplicas
+                type: object
+              batchSize:
+                description: |-
+                  BatchSize sets the token batch size for prompt processing.
+                  Larger values improve throughput but use more memory.
+                  Maps to llama.cpp --batch-size flag.
+                format: int32
+                maximum: 16384
+                minimum: 1
+                type: integer
+              cacheTypeCustomK:
+                description: |-
+                  CacheTypeCustomK sets a custom KV cache type for keys that is not in the
+                  standard enum. Used for llama.cpp forks with additional cache formats such
+                  as TurboQuant (turbo3, turbo4, tbqp3, etc.). Maps to llama.cpp
+                  --cache-type-k. The runtime binary must understand the value or llama-server
+                  will fail to start; LLMKube does not validate the string.
+                  Takes precedence over CacheTypeK when both are set.
+                type: string
+              cacheTypeCustomV:
+                description: |-
+                  CacheTypeCustomV sets a custom KV cache type for values that is not in the
+                  standard enum. See CacheTypeCustomK for usage notes. Takes precedence over
+                  CacheTypeV when both are set.
+                type: string
+              cacheTypeK:
+                description: |-
+                  CacheTypeK sets the KV cache quantization type for keys.
+                  Supported values depend on the llama.cpp build version.
+                  Maps to llama.cpp --cache-type-k flag. Default: f16 (llama.cpp default).
+                  For custom build types not in the enum (e.g. TurboQuant turbo3, tbqp3), use
+                  CacheTypeCustomK instead.
+                enum:
+                - f16
+                - f32
+                - q8_0
+                - q4_0
+                - q4_1
+                - q5_0
+                - q5_1
+                - iq4_nl
+                type: string
+              cacheTypeV:
+                description: |-
+                  CacheTypeV sets the KV cache quantization type for values.
+                  Maps to llama.cpp --cache-type-v flag. Default: f16 (llama.cpp default).
+                  For custom build types not in the enum (e.g. TurboQuant turbo3, tbqp3), use
+                  CacheTypeCustomV instead.
+                enum:
+                - f16
+                - f32
+                - q8_0
+                - q4_0
+                - q4_1
+                - q5_0
+                - q5_1
+                - iq4_nl
+                type: string
+              command:
+                description: |-
+                  Command overrides the container entrypoint.
+                  Only used when Runtime is "generic" or for advanced customization.
+                items:
+                  type: string
+                type: array
+              containerPort:
+                description: |-
+                  ContainerPort overrides the primary container port.
+                  Each runtime has its own default (llamacpp: 8080).
+                format: int32
+                maximum: 65535
+                minimum: 1
+                type: integer
+              contextSize:
+                description: |-
+                  ContextSize sets the context window size for the llama.cpp server (-c flag).
+                  Larger values allow processing longer inputs but require more memory.
+                  If not specified, llama.cpp uses its default (typically 512 or 2048).
+                  The upper bound covers Qwen 3.6 at 1M-via-YaRN with margin and accommodates
+                  near-future hybrid-attention model architectures. KV cache memory is the
+                  user's responsibility to size via spec.resources.memory or hostMemory.
+                format: int32
+                maximum: 2097152
+                minimum: 128
+                type: integer
+              endpoint:
+                description: Endpoint defines the service endpoint configuration
+                properties:
+                  path:
+                    default: /v1/chat/completions
+                    description: Path is the HTTP path for the inference endpoint
+                    type: string
+                  port:
+                    default: 8080
+                    description: Port is the service port
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  type:
+                    default: ClusterIP
+                    description: Type is the Kubernetes service type (ClusterIP, NodePort,
+                      LoadBalancer)
+                    enum:
+                    - ClusterIP
+                    - NodePort
+                    - LoadBalancer
+                    type: string
+                type: object
+              env:
+                description: |-
+                  Env adds environment variables to the inference container.
+                  Useful for HF_TOKEN, custom runtime config, etc.
+                items:
+                  description: EnvVar represents an environment variable present in
+                    a Container.
+                  properties:
+                    name:
+                      description: |-
+                        Name of the environment variable.
+                        May consist of any printable ASCII characters except '='.
+                      type: string
+                    value:
+                      description: |-
+                        Variable references $(VAR_NAME) are expanded
+                        using the previously defined environment variables in the container and
+                        any service environment variables. If a variable cannot be resolved,
+                        the reference in the input string will be unchanged. Double $$ are reduced
+                        to a single $, which allows for escaping the $(VAR_NAME) syntax: i.e.
+                        "$$(VAR_NAME)" will produce the string literal "$(VAR_NAME)".
+                        Escaped references will never be expanded, regardless of whether the variable
+                        exists or not.
+                        Defaults to "".
+                      type: string
+                    valueFrom:
+                      description: Source for the environment variable's value. Cannot
+                        be used if value is not empty.
+                      properties:
+                        configMapKeyRef:
+                          description: Selects a key of a ConfigMap.
+                          properties:
+                            key:
+                              description: The key to select.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the ConfigMap or its key
+                                must be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        fieldRef:
+                          description: |-
+                            Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
+                            spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                          properties:
+                            apiVersion:
+                              description: Version of the schema the FieldPath is
+                                written in terms of, defaults to "v1".
+                              type: string
+                            fieldPath:
+                              description: Path of the field to select in the specified
+                                API version.
+                              type: string
+                          required:
+                          - fieldPath
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        fileKeyRef:
+                          description: |-
+                            FileKeyRef selects a key of the env file.
+                            Requires the EnvFiles feature gate to be enabled.
+                          properties:
+                            key:
+                              description: |-
+                                The key within the env file. An invalid key will prevent the pod from starting.
+                                The keys defined within a source may consist of any printable ASCII characters except '='.
+                                During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                              type: string
+                            optional:
+                              default: false
+                              description: |-
+                                Specify whether the file or its key must be defined. If the file or key
+                                does not exist, then the env var is not published.
+                                If optional is set to true and the specified key does not exist,
+                                the environment variable will not be set in the Pod's containers.
+
+                                If optional is set to false and the specified key does not exist,
+                                an error will be returned during Pod creation.
+                              type: boolean
+                            path:
+                              description: |-
+                                The path within the volume from which to select the file.
+                                Must be relative and may not contain the '..' path or start with '..'.
+                              type: string
+                            volumeName:
+                              description: The name of the volume mount containing
+                                the env file.
+                              type: string
+                          required:
+                          - key
+                          - path
+                          - volumeName
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        resourceFieldRef:
+                          description: |-
+                            Selects a resource of the container: only resources limits and requests
+                            (limits.cpu, limits.memory, limits.ephemeral-storage, requests.cpu, requests.memory and requests.ephemeral-storage) are currently supported.
+                          properties:
+                            containerName:
+                              description: 'Container name: required for volumes,
+                                optional for env vars'
+                              type: string
+                            divisor:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              description: Specifies the output format of the exposed
+                                resources, defaults to "1"
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            resource:
+                              description: 'Required: resource to select'
+                              type: string
+                          required:
+                          - resource
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        secretKeyRef:
+                          description: Selects a key of a secret in the pod's namespace
+                          properties:
+                            key:
+                              description: The key of the secret to select from.  Must
+                                be a valid secret key.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the Secret or its key must
+                                be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      type: object
+                  required:
+                  - name
+                  type: object
+                type: array
+              evictionProtection:
+                description: |-
+                  EvictionProtection marks this service as ineligible for memory-pressure
+                  eviction by the metal-agent watchdog. Use this for production workloads
+                  that should never be silently stopped under memory pressure, even when
+                  they are the lowest-priority option. The agent's per-process pickEvictionTarget
+                  excludes protected processes from the eviction-candidate set; the
+                  MemoryPressure status condition is still patched on protected services
+                  for operator visibility.
+
+                  Has no effect when --eviction-enabled is unset on the metal-agent or
+                  for non-llama-server runtimes (oMLX, Ollama). Defaults to false.
+                type: boolean
+              extraArgs:
+                description: |-
+                  ExtraArgs provides additional command-line arguments passed directly to the
+                  runtime process. Use for flags not yet supported as typed CRD fields.
+                  Arguments are appended after all other configured flags.
+                  Supported by the "llamacpp" and "vllm" runtimes. Ignored by others.
+                  Example: ["--seed", "42", "--log-disable"]
+                items:
+                  type: string
+                type: array
+              flashAttention:
+                description: |-
+                  FlashAttention enables flash attention for faster prompt processing and
+                  reduced KV cache memory. Maps to llama.cpp --flash-attn flag.
+
+                  On NVIDIA GPUs requires Ampere or newer (compute capability 8.0+).
+                  On Apple Silicon (Metal agent path) the default is true when this field
+                  is unset, because the wired-collector + flash-attn combination prevents
+                  the ~25% decode degradation observed at long context on Qwen-class
+                  models running on M-series chips.
+                type: boolean
+              image:
+                description: |-
+                  Image is the container image for the inference runtime.
+                  For llamacpp runtime, defaults to ghcr.io/ggml-org/llama.cpp:server.
+                  For generic runtime, this field is required.
+                type: string
+              imagePullSecrets:
+                description: ImagePullSecrets for pulling container images from private
+                  registries.
+                items:
+                  description: |-
+                    LocalObjectReference contains enough information to let you locate the
+                    referenced object inside the same namespace.
+                  properties:
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                type: array
+              jinja:
+                description: |-
+                  Jinja enables Jinja2 chat template rendering for tool/function calling support.
+                  Required when using the OpenAI-compatible API with tools. Maps to llama.cpp --jinja flag.
+                type: boolean
+              metadataOverrides:
+                description: |-
+                  MetadataOverrides overrides GGUF metadata key-value pairs at model load time.
+                  Each entry is passed as a separate --override-kv flag. Format: key=type:value
+                  (e.g., "qwen35moe.context_length=int:1048576" to extend context window, or
+                  "tokenizer.chat_template.thinking=bool:false" to tweak tokenizer behavior).
+                  Maps to llama.cpp --override-kv flag (one flag per entry).
+                items:
+                  type: string
+                type: array
+              modelRef:
+                description: ModelRef references the Model CR that contains the model
+                  to serve
+                type: string
+              moeCPULayers:
+                description: |-
+                  MoeCPULayers sets the number of MoE layers to offload to CPU.
+                  When set, only the specified number of MoE layers run on CPU rather than all.
+                  Maps to llama.cpp --n-cpu-moe flag.
+                format: int32
+                minimum: 0
+                type: integer
+              moeCPUOffload:
+                description: |-
+                  MoeCPUOffload offloads all MoE expert layers to CPU for reduced VRAM usage.
+                  Enables running large MoE models (e.g., Qwen3-30B, Mixtral) on VRAM-constrained
+                  hardware by keeping attention layers on GPU while expert weights use system RAM.
+                  Maps to llama.cpp --cpu-moe flag. Requires sufficient system RAM via resources.memory.
+                type: boolean
+              noKvOffload:
+                description: |-
+                  NoKvOffload keeps the KV cache in system RAM instead of VRAM.
+                  Useful for extended context windows when VRAM is constrained by model weights.
+                  Maps to llama.cpp --no-kv-offload flag. Requires sufficient system RAM via resources.memory.
+                type: boolean
+              noWarmup:
+                description: |-
+                  NoWarmup skips the llama.cpp startup warmup inference pass.
+                  Reduces pod ready time at the cost of slightly higher first-request latency.
+                  Useful for scale-to-zero and quick redeployment patterns.
+                  Maps to llama.cpp --no-warmup flag.
+                type: boolean
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                description: NodeSelector for pod placement (e.g., specific node pools)
+                type: object
+              parallelSlots:
+                description: |-
+                  ParallelSlots sets the number of concurrent request slots for the llama.cpp
+                  server (--parallel flag). Each slot processes one request independently;
+                  higher values use more KV cache memory. If not specified, the operator
+                  omits --parallel and llama.cpp picks an auto value (currently 4).
+                format: int32
+                maximum: 64
+                minimum: 1
+                type: integer
+              personaPlexConfig:
+                description: |-
+                  PersonaPlexConfig holds configuration for the PersonaPlex (Moshi) runtime.
+                  Only used when Runtime is "personaplex".
+                properties:
+                  cpuOffload:
+                    description: |-
+                      CPUOffload enables model weight offloading to system RAM when GPU VRAM is insufficient.
+                      Requires the accelerate package in the container image.
+                    type: boolean
+                  hfTokenSecretRef:
+                    description: |-
+                      HFTokenSecretRef references a Secret containing the HuggingFace token for model download.
+                      The Secret key must be "HF_TOKEN".
+                    properties:
+                      key:
+                        description: The key of the secret to select from.  Must be
+                          a valid secret key.
+                        type: string
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      optional:
+                        description: Specify whether the Secret or its key must be
+                          defined
+                        type: boolean
+                    required:
+                    - key
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  quantize4Bit:
+                    description: |-
+                      Quantize4Bit enables NF4 4-bit quantization for reduced VRAM usage (~9.6 GB vs ~14 GB).
+                      Requires the bitsandbytes package in the container image.
+                    type: boolean
+                type: object
+              podAnnotations:
+                additionalProperties:
+                  type: string
+                description: |-
+                  PodAnnotations are merged into the inference Pod's metadata.annotations.
+                  Use this to tag Pods for downstream tooling (cost attribution, service
+                  mesh routing, custom admission controllers) without those tools needing
+                  to know about LLMKube's CRD schema. Pure passthrough; the operator
+                  itself does not set any annotations on inference Pods today.
+                type: object
+              podLabels:
+                additionalProperties:
+                  type: string
+                description: |-
+                  PodLabels are merged into the inference Pod's metadata.labels alongside
+                  the operator-managed labels (`app`, `inference.llmkube.dev/model`,
+                  `inference.llmkube.dev/service`). Operator-managed keys take precedence
+                  on collision so the Deployment selector stays in sync with the Pods it
+                  owns. The Deployment selector itself uses only the operator-managed
+                  labels and is immutable, so changing PodLabels later is safe.
+                type: object
+              podSecurityContext:
+                description: |-
+                  PodSecurityContext defines pod-level security attributes for inference pods.
+                  Use this to set fsGroup for volume permissions (required on OpenShift).
+                properties:
+                  appArmorProfile:
+                    description: |-
+                      appArmorProfile is the AppArmor options to use by the containers in this pod.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    properties:
+                      localhostProfile:
+                        description: |-
+                          localhostProfile indicates a profile loaded on the node that should be used.
+                          The profile must be preconfigured on the node to work.
+                          Must match the loaded name of the profile.
+                          Must be set if and only if type is "Localhost".
+                        type: string
+                      type:
+                        description: |-
+                          type indicates which kind of AppArmor profile will be applied.
+                          Valid options are:
+                            Localhost - a profile pre-loaded on the node.
+                            RuntimeDefault - the container runtime's default profile.
+                            Unconfined - no AppArmor enforcement.
+                        type: string
+                    required:
+                    - type
+                    type: object
+                  fsGroup:
+                    description: |-
+                      A special supplemental group that applies to all containers in a pod.
+                      Some volume types allow the Kubelet to change the ownership of that volume
+                      to be owned by the pod:
+
+                      1. The owning GID will be the FSGroup
+                      2. The setgid bit is set (new files created in the volume will be owned by FSGroup)
+                      3. The permission bits are OR'd with rw-rw----
+
+                      If unset, the Kubelet will not modify the ownership and permissions of any volume.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    format: int64
+                    type: integer
+                  fsGroupChangePolicy:
+                    description: |-
+                      fsGroupChangePolicy defines behavior of changing ownership and permission of the volume
+                      before being exposed inside Pod. This field will only apply to
+                      volume types which support fsGroup based ownership(and permissions).
+                      It will have no effect on ephemeral volume types such as: secret, configmaps
+                      and emptydir.
+                      Valid values are "OnRootMismatch" and "Always". If not specified, "Always" is used.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    type: string
+                  runAsGroup:
+                    description: |-
+                      The GID to run the entrypoint of the container process.
+                      Uses runtime default if unset.
+                      May also be set in SecurityContext.  If set in both SecurityContext and
+                      PodSecurityContext, the value specified in SecurityContext takes precedence
+                      for that container.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    format: int64
+                    type: integer
+                  runAsNonRoot:
+                    description: |-
+                      Indicates that the container must run as a non-root user.
+                      If true, the Kubelet will validate the image at runtime to ensure that it
+                      does not run as UID 0 (root) and fail to start the container if it does.
+                      If unset or false, no such validation will be performed.
+                      May also be set in SecurityContext.  If set in both SecurityContext and
+                      PodSecurityContext, the value specified in SecurityContext takes precedence.
+                    type: boolean
+                  runAsUser:
+                    description: |-
+                      The UID to run the entrypoint of the container process.
+                      Defaults to user specified in image metadata if unspecified.
+                      May also be set in SecurityContext.  If set in both SecurityContext and
+                      PodSecurityContext, the value specified in SecurityContext takes precedence
+                      for that container.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    format: int64
+                    type: integer
+                  seLinuxChangePolicy:
+                    description: |-
+                      seLinuxChangePolicy defines how the container's SELinux label is applied to all volumes used by the Pod.
+                      It has no effect on nodes that do not support SELinux or to volumes does not support SELinux.
+                      Valid values are "MountOption" and "Recursive".
+
+                      "Recursive" means relabeling of all files on all Pod volumes by the container runtime.
+                      This may be slow for large volumes, but allows mixing privileged and unprivileged Pods sharing the same volume on the same node.
+
+                      "MountOption" mounts all eligible Pod volumes with `-o context` mount option.
+                      This requires all Pods that share the same volume to use the same SELinux label.
+                      It is not possible to share the same volume among privileged and unprivileged Pods.
+                      Eligible volumes are in-tree FibreChannel and iSCSI volumes, and all CSI volumes
+                      whose CSI driver announces SELinux support by setting spec.seLinuxMount: true in their
+                      CSIDriver instance. Other volumes are always re-labelled recursively.
+                      "MountOption" value is allowed only when SELinuxMount feature gate is enabled.
+
+                      If not specified and SELinuxMount feature gate is enabled, "MountOption" is used.
+                      If not specified and SELinuxMount feature gate is disabled, "MountOption" is used for ReadWriteOncePod volumes
+                      and "Recursive" for all other volumes.
+
+                      This field affects only Pods that have SELinux label set, either in PodSecurityContext or in SecurityContext of all containers.
+
+                      All Pods that use the same volume should use the same seLinuxChangePolicy, otherwise some pods can get stuck in ContainerCreating state.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    type: string
+                  seLinuxOptions:
+                    description: |-
+                      The SELinux context to be applied to all containers.
+                      If unspecified, the container runtime will allocate a random SELinux context for each
+                      container.  May also be set in SecurityContext.  If set in
+                      both SecurityContext and PodSecurityContext, the value specified in SecurityContext
+                      takes precedence for that container.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    properties:
+                      level:
+                        description: Level is SELinux level label that applies to
+                          the container.
+                        type: string
+                      role:
+                        description: Role is a SELinux role label that applies to
+                          the container.
+                        type: string
+                      type:
+                        description: Type is a SELinux type label that applies to
+                          the container.
+                        type: string
+                      user:
+                        description: User is a SELinux user label that applies to
+                          the container.
+                        type: string
+                    type: object
+                  seccompProfile:
+                    description: |-
+                      The seccomp options to use by the containers in this pod.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    properties:
+                      localhostProfile:
+                        description: |-
+                          localhostProfile indicates a profile defined in a file on the node should be used.
+                          The profile must be preconfigured on the node to work.
+                          Must be a descending path, relative to the kubelet's configured seccomp profile location.
+                          Must be set if type is "Localhost". Must NOT be set for any other type.
+                        type: string
+                      type:
+                        description: |-
+                          type indicates which kind of seccomp profile will be applied.
+                          Valid options are:
+
+                          Localhost - a profile defined in a file on the node should be used.
+                          RuntimeDefault - the container runtime default profile should be used.
+                          Unconfined - no profile should be applied.
+                        type: string
+                    required:
+                    - type
+                    type: object
+                  supplementalGroups:
+                    description: |-
+                      A list of groups applied to the first process run in each container, in
+                      addition to the container's primary GID and fsGroup (if specified).  If
+                      the SupplementalGroupsPolicy feature is enabled, the
+                      supplementalGroupsPolicy field determines whether these are in addition
+                      to or instead of any group memberships defined in the container image.
+                      If unspecified, no additional groups are added, though group memberships
+                      defined in the container image may still be used, depending on the
+                      supplementalGroupsPolicy field.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    items:
+                      format: int64
+                      type: integer
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  supplementalGroupsPolicy:
+                    description: |-
+                      Defines how supplemental groups of the first container processes are calculated.
+                      Valid values are "Merge" and "Strict". If not specified, "Merge" is used.
+                      (Alpha) Using the field requires the SupplementalGroupsPolicy feature gate to be enabled
+                      and the container runtime must implement support for this feature.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    type: string
+                  sysctls:
+                    description: |-
+                      Sysctls hold a list of namespaced sysctls used for the pod. Pods with unsupported
+                      sysctls (by the container runtime) might fail to launch.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    items:
+                      description: Sysctl defines a kernel parameter to be set
+                      properties:
+                        name:
+                          description: Name of a property to set
+                          type: string
+                        value:
+                          description: Value of a property to set
+                          type: string
+                      required:
+                      - name
+                      - value
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  windowsOptions:
+                    description: |-
+                      The Windows specific settings applied to all containers.
+                      If unspecified, the options within a container's SecurityContext will be used.
+                      If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence.
+                      Note that this field cannot be set when spec.os.name is linux.
+                    properties:
+                      gmsaCredentialSpec:
+                        description: |-
+                          GMSACredentialSpec is where the GMSA admission webhook
+                          (https://github.com/kubernetes-sigs/windows-gmsa) inlines the contents of the
+                          GMSA credential spec named by the GMSACredentialSpecName field.
+                        type: string
+                      gmsaCredentialSpecName:
+                        description: GMSACredentialSpecName is the name of the GMSA
+                          credential spec to use.
+                        type: string
+                      hostProcess:
+                        description: |-
+                          HostProcess determines if a container should be run as a 'Host Process' container.
+                          All of a Pod's containers must have the same effective HostProcess value
+                          (it is not allowed to have a mix of HostProcess containers and non-HostProcess containers).
+                          In addition, if HostProcess is true then HostNetwork must also be set to true.
+                        type: boolean
+                      runAsUserName:
+                        description: |-
+                          The UserName in Windows to run the entrypoint of the container process.
+                          Defaults to the user specified in image metadata if unspecified.
+                          May also be set in PodSecurityContext. If set in both SecurityContext and
+                          PodSecurityContext, the value specified in SecurityContext takes precedence.
+                        type: string
+                    type: object
+                type: object
+              priority:
+                default: normal
+                description: |-
+                  Priority determines scheduling priority for GPU allocation.
+                  Higher priority services can preempt lower priority ones when GPUs are scarce.
+                enum:
+                - critical
+                - high
+                - normal
+                - low
+                - batch
+                type: string
+              priorityClassName:
+                description: |-
+                  PriorityClassName allows specifying a custom Kubernetes PriorityClass.
+                  Takes precedence over the Priority field if set.
+                type: string
+              probeOverrides:
+                description: |-
+                  ProbeOverrides allows replacing the auto-generated health probes.
+                  Useful for runtimes with non-HTTP health endpoints (e.g., TCP, WebSocket).
+                properties:
+                  liveness:
+                    description: Liveness overrides the liveness probe.
+                    properties:
+                      exec:
+                        description: Exec specifies a command to execute in the container.
+                        properties:
+                          command:
+                            description: |-
+                              Command is the command line to execute inside the container, the working directory for the
+                              command  is root ('/') in the container's filesystem. The command is simply exec'd, it is
+                              not run inside a shell, so traditional shell instructions ('|', etc) won't work. To use
+                              a shell, you need to explicitly call out to that shell.
+                              Exit status of 0 is treated as live/healthy and non-zero is unhealthy.
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        type: object
+                      failureThreshold:
+                        description: |-
+                          Minimum consecutive failures for the probe to be considered failed after having succeeded.
+                          Defaults to 3. Minimum value is 1.
+                        format: int32
+                        type: integer
+                      grpc:
+                        description: GRPC specifies a GRPC HealthCheckRequest.
+                        properties:
+                          port:
+                            description: Port number of the gRPC service. Number must
+                              be in the range 1 to 65535.
+                            format: int32
+                            type: integer
+                          service:
+                            default: ""
+                            description: |-
+                              Service is the name of the service to place in the gRPC HealthCheckRequest
+                              (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
+
+                              If this is not specified, the default behavior is defined by gRPC.
+                            type: string
+                        required:
+                        - port
+                        type: object
+                      httpGet:
+                        description: HTTPGet specifies an HTTP GET request to perform.
+                        properties:
+                          host:
+                            description: |-
+                              Host name to connect to, defaults to the pod IP. You probably want to set
+                              "Host" in httpHeaders instead.
+                            type: string
+                          httpHeaders:
+                            description: Custom headers to set in the request. HTTP
+                              allows repeated headers.
+                            items:
+                              description: HTTPHeader describes a custom header to
+                                be used in HTTP probes
+                              properties:
+                                name:
+                                  description: |-
+                                    The header field name.
+                                    This will be canonicalized upon output, so case-variant names will be understood as the same header.
+                                  type: string
+                                value:
+                                  description: The header field value
+                                  type: string
+                              required:
+                              - name
+                              - value
+                              type: object
+                            type: array
+                            x-kubernetes-list-type: atomic
+                          path:
+                            description: Path to access on the HTTP server.
+                            type: string
+                          port:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              Name or number of the port to access on the container.
+                              Number must be in the range 1 to 65535.
+                              Name must be an IANA_SVC_NAME.
+                            x-kubernetes-int-or-string: true
+                          scheme:
+                            description: |-
+                              Scheme to use for connecting to the host.
+                              Defaults to HTTP.
+                            type: string
+                        required:
+                        - port
+                        type: object
+                      initialDelaySeconds:
+                        description: |-
+                          Number of seconds after the container has started before liveness probes are initiated.
+                          More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
+                        format: int32
+                        type: integer
+                      periodSeconds:
+                        description: |-
+                          How often (in seconds) to perform the probe.
+                          Default to 10 seconds. Minimum value is 1.
+                        format: int32
+                        type: integer
+                      successThreshold:
+                        description: |-
+                          Minimum consecutive successes for the probe to be considered successful after having failed.
+                          Defaults to 1. Must be 1 for liveness and startup. Minimum value is 1.
+                        format: int32
+                        type: integer
+                      tcpSocket:
+                        description: TCPSocket specifies a connection to a TCP port.
+                        properties:
+                          host:
+                            description: 'Optional: Host name to connect to, defaults
+                              to the pod IP.'
+                            type: string
+                          port:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              Number or name of the port to access on the container.
+                              Number must be in the range 1 to 65535.
+                              Name must be an IANA_SVC_NAME.
+                            x-kubernetes-int-or-string: true
+                        required:
+                        - port
+                        type: object
+                      terminationGracePeriodSeconds:
+                        description: |-
+                          Optional duration in seconds the pod needs to terminate gracefully upon probe failure.
+                          The grace period is the duration in seconds after the processes running in the pod are sent
+                          a termination signal and the time when the processes are forcibly halted with a kill signal.
+                          Set this value longer than the expected cleanup time for your process.
+                          If this value is nil, the pod's terminationGracePeriodSeconds will be used. Otherwise, this
+                          value overrides the value provided by the pod spec.
+                          Value must be non-negative integer. The value zero indicates stop immediately via
+                          the kill signal (no opportunity to shut down).
+                          This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
+                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                        format: int64
+                        type: integer
+                      timeoutSeconds:
+                        description: |-
+                          Number of seconds after which the probe times out.
+                          Defaults to 1 second. Minimum value is 1.
+                          More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
+                        format: int32
+                        type: integer
+                    type: object
+                  readiness:
+                    description: Readiness overrides the readiness probe.
+                    properties:
+                      exec:
+                        description: Exec specifies a command to execute in the container.
+                        properties:
+                          command:
+                            description: |-
+                              Command is the command line to execute inside the container, the working directory for the
+                              command  is root ('/') in the container's filesystem. The command is simply exec'd, it is
+                              not run inside a shell, so traditional shell instructions ('|', etc) won't work. To use
+                              a shell, you need to explicitly call out to that shell.
+                              Exit status of 0 is treated as live/healthy and non-zero is unhealthy.
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        type: object
+                      failureThreshold:
+                        description: |-
+                          Minimum consecutive failures for the probe to be considered failed after having succeeded.
+                          Defaults to 3. Minimum value is 1.
+                        format: int32
+                        type: integer
+                      grpc:
+                        description: GRPC specifies a GRPC HealthCheckRequest.
+                        properties:
+                          port:
+                            description: Port number of the gRPC service. Number must
+                              be in the range 1 to 65535.
+                            format: int32
+                            type: integer
+                          service:
+                            default: ""
+                            description: |-
+                              Service is the name of the service to place in the gRPC HealthCheckRequest
+                              (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
+
+                              If this is not specified, the default behavior is defined by gRPC.
+                            type: string
+                        required:
+                        - port
+                        type: object
+                      httpGet:
+                        description: HTTPGet specifies an HTTP GET request to perform.
+                        properties:
+                          host:
+                            description: |-
+                              Host name to connect to, defaults to the pod IP. You probably want to set
+                              "Host" in httpHeaders instead.
+                            type: string
+                          httpHeaders:
+                            description: Custom headers to set in the request. HTTP
+                              allows repeated headers.
+                            items:
+                              description: HTTPHeader describes a custom header to
+                                be used in HTTP probes
+                              properties:
+                                name:
+                                  description: |-
+                                    The header field name.
+                                    This will be canonicalized upon output, so case-variant names will be understood as the same header.
+                                  type: string
+                                value:
+                                  description: The header field value
+                                  type: string
+                              required:
+                              - name
+                              - value
+                              type: object
+                            type: array
+                            x-kubernetes-list-type: atomic
+                          path:
+                            description: Path to access on the HTTP server.
+                            type: string
+                          port:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              Name or number of the port to access on the container.
+                              Number must be in the range 1 to 65535.
+                              Name must be an IANA_SVC_NAME.
+                            x-kubernetes-int-or-string: true
+                          scheme:
+                            description: |-
+                              Scheme to use for connecting to the host.
+                              Defaults to HTTP.
+                            type: string
+                        required:
+                        - port
+                        type: object
+                      initialDelaySeconds:
+                        description: |-
+                          Number of seconds after the container has started before liveness probes are initiated.
+                          More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
+                        format: int32
+                        type: integer
+                      periodSeconds:
+                        description: |-
+                          How often (in seconds) to perform the probe.
+                          Default to 10 seconds. Minimum value is 1.
+                        format: int32
+                        type: integer
+                      successThreshold:
+                        description: |-
+                          Minimum consecutive successes for the probe to be considered successful after having failed.
+                          Defaults to 1. Must be 1 for liveness and startup. Minimum value is 1.
+                        format: int32
+                        type: integer
+                      tcpSocket:
+                        description: TCPSocket specifies a connection to a TCP port.
+                        properties:
+                          host:
+                            description: 'Optional: Host name to connect to, defaults
+                              to the pod IP.'
+                            type: string
+                          port:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              Number or name of the port to access on the container.
+                              Number must be in the range 1 to 65535.
+                              Name must be an IANA_SVC_NAME.
+                            x-kubernetes-int-or-string: true
+                        required:
+                        - port
+                        type: object
+                      terminationGracePeriodSeconds:
+                        description: |-
+                          Optional duration in seconds the pod needs to terminate gracefully upon probe failure.
+                          The grace period is the duration in seconds after the processes running in the pod are sent
+                          a termination signal and the time when the processes are forcibly halted with a kill signal.
+                          Set this value longer than the expected cleanup time for your process.
+                          If this value is nil, the pod's terminationGracePeriodSeconds will be used. Otherwise, this
+                          value overrides the value provided by the pod spec.
+                          Value must be non-negative integer. The value zero indicates stop immediately via
+                          the kill signal (no opportunity to shut down).
+                          This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
+                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                        format: int64
+                        type: integer
+                      timeoutSeconds:
+                        description: |-
+                          Number of seconds after which the probe times out.
+                          Defaults to 1 second. Minimum value is 1.
+                          More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
+                        format: int32
+                        type: integer
+                    type: object
+                  startup:
+                    description: Startup overrides the startup probe.
+                    properties:
+                      exec:
+                        description: Exec specifies a command to execute in the container.
+                        properties:
+                          command:
+                            description: |-
+                              Command is the command line to execute inside the container, the working directory for the
+                              command  is root ('/') in the container's filesystem. The command is simply exec'd, it is
+                              not run inside a shell, so traditional shell instructions ('|', etc) won't work. To use
+                              a shell, you need to explicitly call out to that shell.
+                              Exit status of 0 is treated as live/healthy and non-zero is unhealthy.
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        type: object
+                      failureThreshold:
+                        description: |-
+                          Minimum consecutive failures for the probe to be considered failed after having succeeded.
+                          Defaults to 3. Minimum value is 1.
+                        format: int32
+                        type: integer
+                      grpc:
+                        description: GRPC specifies a GRPC HealthCheckRequest.
+                        properties:
+                          port:
+                            description: Port number of the gRPC service. Number must
+                              be in the range 1 to 65535.
+                            format: int32
+                            type: integer
+                          service:
+                            default: ""
+                            description: |-
+                              Service is the name of the service to place in the gRPC HealthCheckRequest
+                              (see https://github.com/grpc/grpc/blob/master/doc/health-checking.md).
+
+                              If this is not specified, the default behavior is defined by gRPC.
+                            type: string
+                        required:
+                        - port
+                        type: object
+                      httpGet:
+                        description: HTTPGet specifies an HTTP GET request to perform.
+                        properties:
+                          host:
+                            description: |-
+                              Host name to connect to, defaults to the pod IP. You probably want to set
+                              "Host" in httpHeaders instead.
+                            type: string
+                          httpHeaders:
+                            description: Custom headers to set in the request. HTTP
+                              allows repeated headers.
+                            items:
+                              description: HTTPHeader describes a custom header to
+                                be used in HTTP probes
+                              properties:
+                                name:
+                                  description: |-
+                                    The header field name.
+                                    This will be canonicalized upon output, so case-variant names will be understood as the same header.
+                                  type: string
+                                value:
+                                  description: The header field value
+                                  type: string
+                              required:
+                              - name
+                              - value
+                              type: object
+                            type: array
+                            x-kubernetes-list-type: atomic
+                          path:
+                            description: Path to access on the HTTP server.
+                            type: string
+                          port:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              Name or number of the port to access on the container.
+                              Number must be in the range 1 to 65535.
+                              Name must be an IANA_SVC_NAME.
+                            x-kubernetes-int-or-string: true
+                          scheme:
+                            description: |-
+                              Scheme to use for connecting to the host.
+                              Defaults to HTTP.
+                            type: string
+                        required:
+                        - port
+                        type: object
+                      initialDelaySeconds:
+                        description: |-
+                          Number of seconds after the container has started before liveness probes are initiated.
+                          More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
+                        format: int32
+                        type: integer
+                      periodSeconds:
+                        description: |-
+                          How often (in seconds) to perform the probe.
+                          Default to 10 seconds. Minimum value is 1.
+                        format: int32
+                        type: integer
+                      successThreshold:
+                        description: |-
+                          Minimum consecutive successes for the probe to be considered successful after having failed.
+                          Defaults to 1. Must be 1 for liveness and startup. Minimum value is 1.
+                        format: int32
+                        type: integer
+                      tcpSocket:
+                        description: TCPSocket specifies a connection to a TCP port.
+                        properties:
+                          host:
+                            description: 'Optional: Host name to connect to, defaults
+                              to the pod IP.'
+                            type: string
+                          port:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              Number or name of the port to access on the container.
+                              Number must be in the range 1 to 65535.
+                              Name must be an IANA_SVC_NAME.
+                            x-kubernetes-int-or-string: true
+                        required:
+                        - port
+                        type: object
+                      terminationGracePeriodSeconds:
+                        description: |-
+                          Optional duration in seconds the pod needs to terminate gracefully upon probe failure.
+                          The grace period is the duration in seconds after the processes running in the pod are sent
+                          a termination signal and the time when the processes are forcibly halted with a kill signal.
+                          Set this value longer than the expected cleanup time for your process.
+                          If this value is nil, the pod's terminationGracePeriodSeconds will be used. Otherwise, this
+                          value overrides the value provided by the pod spec.
+                          Value must be non-negative integer. The value zero indicates stop immediately via
+                          the kill signal (no opportunity to shut down).
+                          This is a beta field and requires enabling ProbeTerminationGracePeriod feature gate.
+                          Minimum value is 1. spec.terminationGracePeriodSeconds is used if unset.
+                        format: int64
+                        type: integer
+                      timeoutSeconds:
+                        description: |-
+                          Number of seconds after which the probe times out.
+                          Defaults to 1 second. Minimum value is 1.
+                          More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
+                        format: int32
+                        type: integer
+                    type: object
+                type: object
+              reasoningBudget:
+                description: |-
+                  ReasoningBudget caps the number of reasoning tokens the model is allowed to
+                  emit per response. Zero disables visible thinking output entirely; the model
+                  still reasons internally but does not emit thinking tokens. Critical for
+                  production agentic workloads on thinking models (Qwen 3.6, GLM-5) where
+                  runaway reasoning can burn compute.
+                  Maps to llama.cpp --reasoning-budget flag.
+                format: int32
+                minimum: 0
+                type: integer
+              reasoningBudgetMessage:
+                description: |-
+                  ReasoningBudgetMessage is injected when the reasoning budget is exhausted,
+                  forcing the model to conclude. Ignored unless ReasoningBudget is also set.
+                  Maps to llama.cpp --reasoning-budget-message flag.
+                type: string
+              replicas:
+                default: 1
+                description: Replicas is the desired number of inference pods
+                format: int32
+                maximum: 10
+                minimum: 0
+                type: integer
+              resources:
+                description: Resources defines compute resources for inference pods
+                properties:
+                  cpu:
+                    description: CPU requests (e.g., "2" or "2000m")
+                    type: string
+                  gpu:
+                    description: |-
+                      GPU count required per pod
+                      For multi-GPU inference, each pod gets this many GPUs
+                      Note: Multi-GPU sharding config comes from Model CRD
+                    format: int32
+                    maximum: 8
+                    minimum: 0
+                    type: integer
+                  gpuMemory:
+                    description: |-
+                      GPUMemory specifies GPU memory limit per pod (e.g., "16Gi")
+                      Used for scheduling and validation
+                    type: string
+                  hostMemory:
+                    description: |-
+                      HostMemory specifies the system RAM required for hybrid GPU/CPU offloading (e.g., "64Gi").
+                      Used when MoE expert weights or KV cache are offloaded to CPU via moeCPUOffload or noKvOffload.
+                      Translated to pod resources.requests.memory, taking precedence over Memory when set.
+                      Without this, the K8s scheduler has no visibility into the pod's actual RAM consumption,
+                      which can lead to OOM kills after model load.
+                    type: string
+                  memory:
+                    description: Memory requests (e.g., "4Gi")
+                    type: string
+                type: object
+              ropeScaling:
+                description: |-
+                  RopeScaling configures RoPE-based context extension so a model can be
+                  served past its native trained context (e.g. 128K served at 256K via
+                  YaRN). For the llamacpp runtime this maps to --rope-scaling /
+                  --rope-scale / --yarn-orig-ctx. Prefer this over raw spec.extraArgs:
+                  it is validated and discoverable via `kubectl explain`. If --rope-scaling
+                  is also present in spec.extraArgs, extraArgs wins and this is skipped.
+                properties:
+                  factor:
+                    description: |-
+                      Factor is the scale multiplier (--rope-scale), e.g. "2.0" to double the
+                      native context. A string to avoid CRD float pitfalls; the runtime parses
+                      it as a float. Optional.
+                    pattern: ^[0-9]+(\.[0-9]+)?$
+                    type: string
+                  originalContext:
+                    description: |-
+                      OriginalContext is the model's native training context length
+                      (--yarn-orig-ctx), e.g. 131072 for a 128K model. Recommended with yarn.
+                    format: int32
+                    minimum: 128
+                    type: integer
+                  type:
+                    description: |-
+                      Type is the scaling method (--rope-scaling). "yarn" is the usual choice
+                      for extending context (e.g. 128K to 256K).
+                    enum:
+                    - linear
+                    - yarn
+                    - longrope
+                    type: string
+                required:
+                - type
+                type: object
+              runtime:
+                default: llamacpp
+                description: |-
+                  Runtime selects the inference server backend.
+                  "llamacpp" (default): llama.cpp server with auto-generated args and /health probes.
+                  "generic": user-provided container with custom command, args, env, and probes.
+                  "personaplex": NVIDIA PersonaPlex (Moshi) speech-to-speech server.
+                  "vllm": vLLM OpenAI-compatible server with PagedAttention.
+                  "tgi": HuggingFace Text Generation Inference server.
+                enum:
+                - llamacpp
+                - personaplex
+                - vllm
+                - tgi
+                - generic
+                type: string
+              runtimeClassName:
+                description: |-
+                  RuntimeClassName selects a Kubernetes RuntimeClass for the inference Pod.
+                  Most commonly set to "nvidia" on clusters where the NVIDIA Container
+                  Runtime is not configured as the cluster default. Without it, GPU pods
+                  schedule onto the GPU node but never get the device files bind-mounted,
+                  and the container fails at runtime with "no CUDA-capable device is
+                  detected". Maps directly to PodSpec.RuntimeClassName.
+
+                  Most clusters running the NVIDIA GPU Operator with the default toolkit
+                  env do not need this set; it is a safety hatch for clusters where the
+                  runtime configuration is non-default.
+                type: string
+              securityContext:
+                description: SecurityContext defines container-level security attributes
+                  for the inference container.
+                properties:
+                  allowPrivilegeEscalation:
+                    description: |-
+                      AllowPrivilegeEscalation controls whether a process can gain more
+                      privileges than its parent process. This bool directly controls if
+                      the no_new_privs flag will be set on the container process.
+                      AllowPrivilegeEscalation is true always when the container is:
+                      1) run as Privileged
+                      2) has CAP_SYS_ADMIN
+                      Note that this field cannot be set when spec.os.name is windows.
+                    type: boolean
+                  appArmorProfile:
+                    description: |-
+                      appArmorProfile is the AppArmor options to use by this container. If set, this profile
+                      overrides the pod's appArmorProfile.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    properties:
+                      localhostProfile:
+                        description: |-
+                          localhostProfile indicates a profile loaded on the node that should be used.
+                          The profile must be preconfigured on the node to work.
+                          Must match the loaded name of the profile.
+                          Must be set if and only if type is "Localhost".
+                        type: string
+                      type:
+                        description: |-
+                          type indicates which kind of AppArmor profile will be applied.
+                          Valid options are:
+                            Localhost - a profile pre-loaded on the node.
+                            RuntimeDefault - the container runtime's default profile.
+                            Unconfined - no AppArmor enforcement.
+                        type: string
+                    required:
+                    - type
+                    type: object
+                  capabilities:
+                    description: |-
+                      The capabilities to add/drop when running containers.
+                      Defaults to the default set of capabilities granted by the container runtime.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    properties:
+                      add:
+                        description: Added capabilities
+                        items:
+                          description: Capability represent POSIX capabilities type
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      drop:
+                        description: Removed capabilities
+                        items:
+                          description: Capability represent POSIX capabilities type
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                    type: object
+                  privileged:
+                    description: |-
+                      Run container in privileged mode.
+                      Processes in privileged containers are essentially equivalent to root on the host.
+                      Defaults to false.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    type: boolean
+                  procMount:
+                    description: |-
+                      procMount denotes the type of proc mount to use for the containers.
+                      The default value is Default which uses the container runtime defaults for
+                      readonly paths and masked paths.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    type: string
+                  readOnlyRootFilesystem:
+                    description: |-
+                      Whether this container has a read-only root filesystem.
+                      Default is false.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    type: boolean
+                  runAsGroup:
+                    description: |-
+                      The GID to run the entrypoint of the container process.
+                      Uses runtime default if unset.
+                      May also be set in PodSecurityContext.  If set in both SecurityContext and
+                      PodSecurityContext, the value specified in SecurityContext takes precedence.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    format: int64
+                    type: integer
+                  runAsNonRoot:
+                    description: |-
+                      Indicates that the container must run as a non-root user.
+                      If true, the Kubelet will validate the image at runtime to ensure that it
+                      does not run as UID 0 (root) and fail to start the container if it does.
+                      If unset or false, no such validation will be performed.
+                      May also be set in PodSecurityContext.  If set in both SecurityContext and
+                      PodSecurityContext, the value specified in SecurityContext takes precedence.
+                    type: boolean
+                  runAsUser:
+                    description: |-
+                      The UID to run the entrypoint of the container process.
+                      Defaults to user specified in image metadata if unspecified.
+                      May also be set in PodSecurityContext.  If set in both SecurityContext and
+                      PodSecurityContext, the value specified in SecurityContext takes precedence.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    format: int64
+                    type: integer
+                  seLinuxOptions:
+                    description: |-
+                      The SELinux context to be applied to the container.
+                      If unspecified, the container runtime will allocate a random SELinux context for each
+                      container.  May also be set in PodSecurityContext.  If set in both SecurityContext and
+                      PodSecurityContext, the value specified in SecurityContext takes precedence.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    properties:
+                      level:
+                        description: Level is SELinux level label that applies to
+                          the container.
+                        type: string
+                      role:
+                        description: Role is a SELinux role label that applies to
+                          the container.
+                        type: string
+                      type:
+                        description: Type is a SELinux type label that applies to
+                          the container.
+                        type: string
+                      user:
+                        description: User is a SELinux user label that applies to
+                          the container.
+                        type: string
+                    type: object
+                  seccompProfile:
+                    description: |-
+                      The seccomp options to use by this container. If seccomp options are
+                      provided at both the pod & container level, the container options
+                      override the pod options.
+                      Note that this field cannot be set when spec.os.name is windows.
+                    properties:
+                      localhostProfile:
+                        description: |-
+                          localhostProfile indicates a profile defined in a file on the node should be used.
+                          The profile must be preconfigured on the node to work.
+                          Must be a descending path, relative to the kubelet's configured seccomp profile location.
+                          Must be set if type is "Localhost". Must NOT be set for any other type.
+                        type: string
+                      type:
+                        description: |-
+                          type indicates which kind of seccomp profile will be applied.
+                          Valid options are:
+
+                          Localhost - a profile defined in a file on the node should be used.
+                          RuntimeDefault - the container runtime default profile should be used.
+                          Unconfined - no profile should be applied.
+                        type: string
+                    required:
+                    - type
+                    type: object
+                  windowsOptions:
+                    description: |-
+                      The Windows specific settings applied to all containers.
+                      If unspecified, the options from the PodSecurityContext will be used.
+                      If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence.
+                      Note that this field cannot be set when spec.os.name is linux.
+                    properties:
+                      gmsaCredentialSpec:
+                        description: |-
+                          GMSACredentialSpec is where the GMSA admission webhook
+                          (https://github.com/kubernetes-sigs/windows-gmsa) inlines the contents of the
+                          GMSA credential spec named by the GMSACredentialSpecName field.
+                        type: string
+                      gmsaCredentialSpecName:
+                        description: GMSACredentialSpecName is the name of the GMSA
+                          credential spec to use.
+                        type: string
+                      hostProcess:
+                        description: |-
+                          HostProcess determines if a container should be run as a 'Host Process' container.
+                          All of a Pod's containers must have the same effective HostProcess value
+                          (it is not allowed to have a mix of HostProcess containers and non-HostProcess containers).
+                          In addition, if HostProcess is true then HostNetwork must also be set to true.
+                        type: boolean
+                      runAsUserName:
+                        description: |-
+                          The UserName in Windows to run the entrypoint of the container process.
+                          Defaults to the user specified in image metadata if unspecified.
+                          May also be set in PodSecurityContext. If set in both SecurityContext and
+                          PodSecurityContext, the value specified in SecurityContext takes precedence.
+                        type: string
+                    type: object
+                type: object
+              skipModelInit:
+                description: |-
+                  SkipModelInit disables the model-downloader init container.
+                  Use when the model is baked into the image or downloaded by the
+                  container itself (e.g., via HF_TOKEN).
+                type: boolean
+              tensorOverrides:
+                description: |-
+                  TensorOverrides provides fine-grained tensor placement overrides for power users.
+                  Each entry specifies a tensor name and target device (e.g., "exps=CPU", "token_embd=CUDA0").
+                  Maps to llama.cpp --override-tensor flag (one flag per entry).
+                items:
+                  type: string
+                type: array
+              tgiConfig:
+                description: |-
+                  TGIConfig holds configuration for the TGI runtime.
+                  Only used when Runtime is "tgi".
+                properties:
+                  dtype:
+                    description: Dtype sets the model data type (float16, bfloat16).
+                    enum:
+                    - float16
+                    - bfloat16
+                    type: string
+                  hfTokenSecretRef:
+                    description: HFTokenSecretRef references a Secret containing the
+                      HuggingFace token.
+                    properties:
+                      key:
+                        description: The key of the secret to select from.  Must be
+                          a valid secret key.
+                        type: string
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      optional:
+                        description: Specify whether the Secret or its key must be
+                          defined
+                        type: boolean
+                    required:
+                    - key
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  maxInputLength:
+                    description: MaxInputLength sets the maximum input token length.
+                    format: int32
+                    type: integer
+                  maxTotalTokens:
+                    description: MaxTotalTokens sets the maximum total tokens (input
+                      + output).
+                    format: int32
+                    type: integer
+                  quantize:
+                    description: Quantize sets the quantization method (bitsandbytes,
+                      gptq, awq, eetq).
+                    enum:
+                    - bitsandbytes
+                    - gptq
+                    - awq
+                    - eetq
+                    type: string
+                type: object
+              tolerations:
+                description: Tolerations for pod scheduling (e.g., GPU taints, spot
+                  instances)
+                items:
+                  description: |-
+                    The pod this Toleration is attached to tolerates any taint that matches
+                    the triple <key,value,effect> using the matching operator <operator>.
+                  properties:
+                    effect:
+                      description: |-
+                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                      type: string
+                    key:
+                      description: |-
+                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                      type: string
+                    operator:
+                      description: |-
+                        Operator represents a key's relationship to the value.
+                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                        Exists is equivalent to wildcard for value, so that a pod can
+                        tolerate all taints of a particular category.
+                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                      type: string
+                    tolerationSeconds:
+                      description: |-
+                        TolerationSeconds represents the period of time the toleration (which must be
+                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                        negative values will be treated as 0 (evict immediately) by the system.
+                      format: int64
+                      type: integer
+                    value:
+                      description: |-
+                        Value is the taint value the toleration matches to.
+                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                      type: string
+                  type: object
+                type: array
+              uBatchSize:
+                description: |-
+                  UBatchSize sets the micro-batch size for decoding.
+                  Smaller micro-batches reduce memory usage during generation.
+                  Maps to llama.cpp --ubatch-size flag.
+                format: int32
+                minimum: 1
+                type: integer
+              vllmConfig:
+                description: |-
+                  VLLMConfig holds configuration for the vLLM runtime.
+                  Only used when Runtime is "vllm".
+                properties:
+                  attentionBackend:
+                    description: |-
+                      AttentionBackend selects the attention implementation used by vLLM.
+                      FLASHINFER is typically fastest on recent NVIDIA GPUs (especially Blackwell);
+                      FLASH_ATTN is a solid default; XFORMERS and torch_sdpa are portability
+                      fallbacks. Requires a vLLM version that supports the chosen backend.
+                      Both uppercase (vLLM's native form) and lowercase spellings are accepted
+                      for backwards compatibility with earlier LLMKube releases.
+                      Maps to vLLM --attention-backend flag.
+                    enum:
+                    - FLASH_ATTN
+                    - FLASHINFER
+                    - XFORMERS
+                    - flashinfer
+                    - flash_attn
+                    - xformers
+                    - torch_sdpa
+                    type: string
+                  cpuOffloadGB:
+                    description: |-
+                      CPUOffloadGB increases the GPU memory size. When set, passes
+                      --cpu-offload-gb to vLLM. Per-rank, so 4 on TP=2 means 4 GB of
+                      CPU RAM per GPU. Use when FP8 model weights don't fit VRAM.
+                      Throughput hit is 2-5x on the offloaded path.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  dtype:
+                    description: Dtype sets the model data type (auto, float16, bfloat16).
+                    enum:
+                    - auto
+                    - float16
+                    - bfloat16
+                    type: string
+                  enableChunkedPrefill:
+                    description: |-
+                      EnableChunkedPrefill interleaves long prefills with decode steps so a
+                      large paste (e.g. a 32K-token file) does not starve concurrent decode
+                      streams. Only emitted when explicitly set to true.
+                      Maps to vLLM --enable-chunked-prefill flag.
+                    type: boolean
+                  enableExpertParallel:
+                    description: |-
+                      EnableExpertParallel distributes MoE experts across tensor-parallel ranks
+                      instead of replicating them. Only meaningful for MoE models.
+                      Maps to vLLM --enable-expert-parallel flag.
+                    type: boolean
+                  enablePrefixCaching:
+                    description: |-
+                      EnablePrefixCaching turns on vLLM's automatic prefix caching for repeated prompts.
+                      Significantly reduces time-to-first-token for conversational and agentic workloads
+                      where requests share a common system prompt.
+                      Only emitted when explicitly set to true — when nil or false, vLLM's own
+                      default is used (do not emit the flag).
+                      Maps to vLLM --enable-prefix-caching flag.
+                    type: boolean
+                  gpuMemoryUtilization:
+                    description: |-
+                      GPUMemoryUtilization controls how much GPU memory each stage can use.
+                      When set, passes --gpu-memory-utilization to vLLM. Range from 0.1 - 0.99
+                      and default unset (vLLM uses 0.90).
+                    maximum: 0.99
+                    minimum: 0.1
+                    type: number
+                  hfTokenSecretRef:
+                    description: HFTokenSecretRef references a Secret containing the
+                      HuggingFace token.
+                    properties:
+                      key:
+                        description: The key of the secret to select from.  Must be
+                          a valid secret key.
+                        type: string
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      optional:
+                        description: Specify whether the Secret or its key must be
+                          defined
+                        type: boolean
+                    required:
+                    - key
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  kvCacheCustomDtype:
+                    description: |-
+                      KVCacheCustomDtype sets a custom vLLM KV cache element type that is not
+                      in the standard enum. Used for vLLM versions with additional cache
+                      formats such as TurboQuant 2-bit (turbo2, shipped in v0.20.0). Maps to
+                      vLLM --kv-cache-dtype. The runtime image must understand the value or
+                      vLLM will fail to start; LLMKube does not validate the string. Mirrors
+                      the llama.cpp-side CacheTypeCustomK/V escape hatch.
+                      Takes precedence over KVCacheDtype when both are set.
+                    type: string
+                  kvCacheDtype:
+                    default: auto
+                    description: |-
+                      KVCacheDtype selects the KV cache element type. fp8_e5m2 and fp8_e4m3 cut
+                      KV cache memory roughly in half versus auto (which follows dtype), which
+                      is what unlocks 128K+ context on consumer VRAM for agentic workloads.
+                      Maps to vLLM --kv-cache-dtype flag.
+                      For custom build types not in the enum (e.g. TurboQuant turbo2 from
+                      vLLM v0.20+), use KVCacheCustomDtype instead.
+                    enum:
+                    - auto
+                    - fp8_e5m2
+                    - fp8_e4m3
+                    type: string
+                  maxModelLen:
+                    description: MaxModelLen sets the maximum model context length.
+                    format: int32
+                    type: integer
+                  maxNumBatchedTokens:
+                    description: |-
+                      MaxNumBatchedTokens sets the maximum number of tokens batched together
+                      per step. This is the main throughput knob: too low means prefill-bound,
+                      too high risks OOM on long context. No default — only emitted when set.
+                      Maps to vLLM --max-num-batched-tokens flag.
+                    format: int32
+                    minimum: 512
+                    type: integer
+                  quantization:
+                    description: |-
+                      Quantization method.
+                      awq, gptq, squeezellm are classic 4-bit formats. fp8 targets 8-bit FP
+                      checkpoints (Qwen FP8, Llama FP8, etc.). nvfp4 is NVIDIA's Blackwell-native
+                      4-bit format. compressed-tensors is the neuralmagic/vLLM cross-format
+                      loader used by Unsloth and other recent releases.
+                    enum:
+                    - awq
+                    - gptq
+                    - squeezellm
+                    - fp8
+                    - nvfp4
+                    - compressed-tensors
+                    type: string
+                  speculative:
+                    description: |-
+                      Speculative enables draft-model speculative decoding. On single-stream
+                      agentic workloads this can be 30-60% faster than plain tensor-parallel
+                      execution. Requires a second (smaller) Model CR to act as the draft.
+                    properties:
+                      enabled:
+                        description: |-
+                          Enabled toggles speculative decoding on. When false or nil, no
+                          speculative flags are emitted regardless of other fields.
+                        type: boolean
+                      model:
+                        description: |-
+                          Model references the Model CR (in the same namespace as the
+                          InferenceService) to use as the speculative draft model.
+                          Required when Enabled is true. If missing, speculative decoding is
+                          skipped and the InferenceService surfaces a SpeculativeInvalid
+                          status condition rather than failing the reconcile.
+                          Maps to vLLM --speculative-model flag.
+                        type: string
+                      numSpeculativeTokens:
+                        default: 4
+                        description: |-
+                          NumSpeculativeTokens is the number of draft tokens proposed per step.
+                          Typical sweet spot is 3-5; higher values increase wasted work when the
+                          draft disagrees with the target model.
+                          Maps to vLLM --num-speculative-tokens flag.
+                        format: int32
+                        maximum: 16
+                        minimum: 1
+                        type: integer
+                    type: object
+                  tensorParallelSize:
+                    description: TensorParallelSize sets the number of GPUs for tensor
+                      parallelism.
+                    format: int32
+                    type: integer
+                type: object
+            required:
+            - modelRef
+            type: object
+          status:
+            description: status defines the observed state of InferenceService
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of the InferenceService resource.
+                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
+
+                  Standard condition types include:
+                  - "Available": the resource is fully functional
+                  - "Progressing": the resource is being created or updated
+                  - "Degraded": the resource failed to reach or maintain its desired state
+
+                  The status of each condition is one of True, False, or Unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              desiredReplicas:
+                description: DesiredReplicas is the desired number of replicas
+                format: int32
+                type: integer
+              effectivePriority:
+                description: EffectivePriority shows the resolved priority value from
+                  the applied PriorityClass
+                format: int32
+                type: integer
+              endpoint:
+                description: Endpoint is the service URL where inference requests
+                  can be sent
+                type: string
+              lastUpdated:
+                description: LastUpdated is the timestamp of the last status update
+                format: date-time
+                type: string
+              modelReady:
+                description: ModelReady indicates if the referenced Model is in Ready
+                  state
+                type: boolean
+              phase:
+                description: |-
+                  Phase represents the current lifecycle phase of the InferenceService.
+                  Possible values: Pending, Creating, Progressing, Ready, WaitingForGPU,
+                  Stopped, Failed. Stopped is the terminal state when spec.replicas=0
+                  has caused the agent to tear down the workload; tooling polling for
+                  readiness should treat Stopped the same as Pending (the user
+                  intentionally took the service offline; this is not an error).
+                enum:
+                - Pending
+                - Creating
+                - Progressing
+                - Ready
+                - WaitingForGPU
+                - Stopped
+                - Failed
+                type: string
+              queuePosition:
+                description: QueuePosition indicates position among pending InferenceServices
+                  cluster-wide (0 = not queued)
+                format: int32
+                type: integer
+              readyReplicas:
+                description: Replicas tracks the number of ready vs desired pods
+                format: int32
+                type: integer
+              replicas:
+                description: Replicas is the current number of running inference pods
+                format: int32
+                type: integer
+              schedulingMessage:
+                description: SchedulingMessage provides details about scheduling issues
+                type: string
+              schedulingStatus:
+                description: SchedulingStatus indicates why pods cannot be scheduled
+                  (e.g., "InsufficientGPU")
+                type: string
+              waitingFor:
+                description: 'WaitingFor describes the resource constraint (e.g.,
+                  "nvidia.com/gpu: 1")'
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      scale:
+        specReplicasPath: .spec.replicas
+        statusReplicasPath: .status.replicas
+      status: {}
+{{- end }}

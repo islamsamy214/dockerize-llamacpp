@@ -1,0 +1,38 @@
+{{- if .Values.prometheus.inferencePodMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "llmkube.fullname" . }}-inference
+  namespace: {{ .Values.prometheus.inferencePodMonitor.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "llmkube.labels" . | nindent 4 }}
+    {{- with .Values.prometheus.inferencePodMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    # Match every pod carrying the operator-managed service label. A
+    # matchLabels entry with an empty value would be ANDed in and match
+    # nothing, so the Exists expression is the whole selector.
+    matchExpressions:
+      - key: inference.llmkube.dev/service
+        operator: Exists
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.prometheus.inferencePodMonitor.interval | default "30s" }}
+      relabelings:
+        # Promote the operator-managed pod labels onto every scraped series so
+        # recording rules and dashboards can group by service / namespace /
+        # runtime without re-joining against the kube_pod_labels metric.
+        - sourceLabels: [__meta_kubernetes_pod_label_inference_llmkube_dev_service]
+          targetLabel: service
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - sourceLabels: [__meta_kubernetes_pod_label_inference_llmkube_dev_model]
+          targetLabel: model
+        - sourceLabels: [__meta_kubernetes_pod_label_inference_llmkube_dev_runtime]
+          targetLabel: runtime
+  namespaceSelector:
+    any: true
+{{- end }}
